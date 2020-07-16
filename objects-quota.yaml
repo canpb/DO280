@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  creationTimestamp: "2020-07-13T19:37:43Z"
+  name: objects-quota
+  namespace: schedule-pods
+  resourceVersion: "2604799"
+  selfLink: /api/v1/namespaces/schedule-pods/resourcequotas/objects-quota
+  uid: 51df08d5-c540-11ea-b800-0a40063bfe5b
+spec:
+  hard:
+    persistentvolumeclaims: "10"
+    pods: "100"
+    replicationcontrollers: "2"
+    resourcequotas: "10"
+    services: "10"
+status:
+  hard:
+    persistentvolumeclaims: "10"
+    pods: "100"
+    replicationcontrollers: "2"
+    resourcequotas: "1"
+    services: "10"
+  used:
+    persistentvolumeclaims: "0"
+    pods: "4"
+    replicationcontrollers: "0"
+    resourcequotas: "1"
+    services: "1"

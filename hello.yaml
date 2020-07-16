@@ -1,0 +1,65 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  annotations:
+    deployment.kubernetes.io/revision: "3"
+  creationTimestamp: "2020-07-13T03:53:33Z"
+  generation: 5
+  labels:
+    app: hello
+  name: hello
+  namespace: schedule-pods
+  resourceVersion: "2630239"
+  selfLink: /apis/extensions/v1beta1/namespaces/schedule-pods/deployments/hello
+  uid: 6bff13c7-c4bc-11ea-b6c0-0a9c0d887b9f
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: hello
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: hello
+    spec:
+      containers:
+      - image: quay.io/redhattraining/hello-world-nginx:v1.0
+        imagePullPolicy: IfNotPresent
+        name: hello-world-nginx
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        env: prod
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+status:
+  availableReplicas: 1
+  conditions:
+  - lastTransitionTime: "2020-07-13T03:58:22Z"
+    lastUpdateTime: "2020-07-13T03:58:22Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2020-07-13T04:24:15Z"
+    lastUpdateTime: "2020-07-13T04:27:57Z"
+    message: ReplicaSet "hello-66cff6d676" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: Progressing
+  observedGeneration: 5
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
