@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: loadtest
+  name: loadtest
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: loadtest
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: loadtest
+    spec:
+      containers:
+      - image: quay.io/redhattraining/loadtest:v1.0
+        name: loadtest
+        resources: {}
+status: {}

@@ -1,0 +1,70 @@
+apiVersion: v1
+items:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    creationTimestamp: null
+    labels:
+      app: loadtest
+    name: loadtest
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: loadtest
+    strategy: {}
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: loadtest
+      spec:
+        containers:
+        - image: quay.io/redhattraining/loadtest:v1.0
+          name: loadtest
+          resources:
+            requests:
+              cpu: "100m"
+              memory: 20M
+            limits:
+              cpu: "500m"
+              memory: 200M
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    creationTimestamp: null
+    labels:
+      app: loadtest
+    name: loadtest
+  spec:
+    ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 8080
+    selector:
+      app: loadtest
+  status:
+    loadBalancer: {}
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    annotations:
+      haproxy.router.openshift.io/timeout: 60s
+    creationTimestamp: null
+    labels:
+      app: loadtest
+    name: loadtest
+  spec:
+    host: ""
+    port:
+      targetPort: 8080
+    subdomain: ""
+    to:
+      kind: ""
+      name: loadtest
+      weight: null
+  status:
+    ingress: null
+kind: List
+metadata: {}

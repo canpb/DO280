@@ -1,0 +1,15 @@
+## Run the following command to create the private key
+openssl genrsa -out training.key 2048
+
+## Run the following command to generate a certificate signing request
+source /usr/local/etc/ocp4.config
+
+openssl req -new -key training.key \
+  -subj "/C=US/ST=North Carolina/L=Raleigh/O=Red Hat/CN=todo-https.${RHT_OCP4_WILDCARD_DOMAIN}" \
+  -out training.csr
+
+## Run the following command to generate a certificate
+openssl x509 -req -in training.csr \
+  -CA training-CA.pem -CAkey training-CA.key -CAcreateserial \
+  -passin file:passphrase.txt \
+  -out training.crt -days 1825 -sha256 -extfile training.ext

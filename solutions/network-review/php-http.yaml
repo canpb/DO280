@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-http
+  labels:
+    app: php-http
+    name: php-http
+  namespace: network-review
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php-http
+      name: php-http
+  template:
+    metadata:
+      labels:
+        app: php-http
+        name: php-http
+    spec:
+      containers:
+      - resources:
+          limits:
+            memory: "128Mi"
+            cpu: '0.5'
+        image: 'quay.io/redhattraining/php-ssl:v1.0'
+        name: php-http
+        ports:
+        - containerPort: 8080
+          name: php-http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: php-http
+    name: php-http
+  name: php-http
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    name: php-http

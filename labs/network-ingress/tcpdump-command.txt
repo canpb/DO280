@@ -1,0 +1,9 @@
+## Run the following commands to intercept the traffic on your workstation.
+* Refresh the web page to capture some data
+
+* To retrieve the name of the main interface, run the following command:
+ip a | grep 172.25.250.9
+
+## Tcpdump command
+* Replace <ensX> with the interface name.
+sudo tcpdump -i ensX -A -n port 80 | grep js

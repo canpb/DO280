@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-https
+  labels:
+    app: php-https
+    name: php-https
+  namespace: network-review
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php-https
+      name: php-https
+  template:
+    metadata:
+      labels:
+        app: php-https
+        name: php-https
+    spec:
+      containers:
+      - resources:
+          limits:
+            memory: "128Mi"
+            cpu: '0.5'
+        image: 'quay.io/redhattraining/php-ssl:v1.1'
+        name: php-https
+        ports:
+        - containerPort: 8443
+          name: php-https
+        volumeMounts:
+        - name: tls-certs
+          readOnly: true
+          mountPath: /usr/local/etc/ssl/certs
+      volumes:
+      - name: tls-certs
+        secret:
+          secretName: php-certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: php-https
+    name: php-https
+  name: php-https
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    name: php-https

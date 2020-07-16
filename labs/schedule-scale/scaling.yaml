@@ -1,0 +1,101 @@
+apiVersion: v1
+items:
+- apiVersion: apps.openshift.io/v1
+  kind: DeploymentConfig
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftNewApp
+    creationTimestamp: null
+    labels:
+      app: scaling
+    name: scaling
+  spec:
+    replicas: 1
+    selector:
+      app: scaling
+      deploymentconfig: scaling
+    strategy:
+      resources: {}
+    template:
+      metadata:
+        annotations:
+          openshift.io/generated-by: OpenShiftNewApp
+        creationTimestamp: null
+        labels:
+          app: scaling
+          deploymentconfig: scaling
+      spec:
+        containers:
+        - image: quay.io/redhattraining/scaling:v1.0
+          name: scaling
+          ports:
+          - containerPort: 8443
+            protocol: TCP
+          - containerPort: 8080
+            protocol: TCP
+          resources: {}
+    test: false
+    triggers:
+    - type: ConfigChange
+    - imageChangeParams:
+        automatic: true
+        containerNames:
+        - scaling
+        from:
+          kind: ImageStreamTag
+          name: scaling:latest
+      type: ImageChange
+  status:
+    availableReplicas: 0
+    latestVersion: 0
+    observedGeneration: 0
+    replicas: 0
+    unavailableReplicas: 0
+    updatedReplicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftNewApp
+    creationTimestamp: null
+    labels:
+      app: scaling
+    name: scaling
+  spec:
+    ports:
+    - name: 8080-tcp
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+    - name: 8443-tcp
+      port: 8443
+      protocol: TCP
+      targetPort: 8443
+    selector:
+      app: scaling
+      deploymentconfig: scaling
+  status:
+    loadBalancer: {}
+- apiVersion: route.openshift.io/v1
+  kind: Route
+  metadata:
+    annotations:
+      openshift.io/host.generated: "true"
+    labels:
+      app: scaling
+    name: scaling
+    namespace: schedule-scale
+  spec:
+    host: ""
+    port:
+      targetPort: 8080-tcp
+    subdomain: ""
+    to:
+      kind: Service
+      name: scaling
+      weight: 100
+    wildcardPolicy: None
+  status:
+    ingress: null
+kind: List
+metadata: {}

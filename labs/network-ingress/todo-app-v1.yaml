@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-http
+  labels:
+    app: todo-http
+    name: todo-http
+  namespace: network-ingress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: todo-http
+      name: todo-http
+  template:
+    metadata:
+      labels:
+        app: todo-http
+        name: todo-http
+    spec:
+      containers:
+      - resources:
+          limits:
+            cpu: '0.5'
+        image: quay.io/redhattraining/todo-angular:v1.1
+        name: todo-http
+        ports:
+        - containerPort: 8080
+          name: todo-http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: todo-http
+    name: todo-http
+  name: todo-http
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    name: todo-http

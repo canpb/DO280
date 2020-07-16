@@ -1,0 +1,20 @@
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  annotations:
+    release.openshift.io/create-only: "true"
+  creationTimestamp: "2020-06-26T17:15:56Z"
+  generation: 1
+  name: cluster
+  resourceVersion: "1738"
+  selfLink: /apis/config.openshift.io/v1/oauths/cluster
+  uid: b298b058-b7d0-11ea-afd2-0ae71f6b4225
+spec:
+  identityProviders:
+  - htpasswd:
+      fileData:
+        name: localusers
+    mappingMethod: claim
+    name: myusers
+    type: HTPasswd
+
