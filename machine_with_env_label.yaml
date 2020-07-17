@@ -1,0 +1,110 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: Machine
+metadata:
+  annotations:
+    machine.openshift.io/instance-state: running
+  creationTimestamp: "2020-07-16T19:48:52Z"
+  finalizers:
+  - machine.machine.openshift.io
+  generateName: ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c-
+  generation: 2
+  labels:
+    env: prod
+    machine.openshift.io/cluster-api-cluster: ocp-jppjvorndzppqro20-mfxkw
+    machine.openshift.io/cluster-api-machine-role: worker
+    machine.openshift.io/cluster-api-machine-type: worker
+    machine.openshift.io/cluster-api-machineset: ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c
+    machine.openshift.io/instance-type: m5.xlarge
+    machine.openshift.io/region: us-east-1
+    machine.openshift.io/zone: us-east-1c
+  name: ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c-njb6n
+  namespace: openshift-machine-api
+  ownerReferences:
+  - apiVersion: machine.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: MachineSet
+    name: ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c
+    uid: b451e050-b7d0-11ea-afd2-0ae71f6b4225
+  resourceVersion: "3392953"
+  selfLink: /apis/machine.openshift.io/v1beta1/namespaces/openshift-machine-api/machines/ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c-njb6n
+  uid: 5fdf0ad7-c79d-11ea-8752-0a40063bfe5b
+spec:
+  metadata:
+    creationTimestamp: null
+  providerID: aws:///us-east-1c/i-02e826e2da310bad1
+  providerSpec:
+    value:
+      ami:
+        id: ami-01e7fdcb66157b224
+      apiVersion: awsproviderconfig.openshift.io/v1beta1
+      blockDevices:
+      - ebs:
+          iops: 0
+          volumeSize: 120
+          volumeType: gp2
+      credentialsSecret:
+        name: aws-cloud-credentials
+      deviceIndex: 0
+      iamInstanceProfile:
+        id: ocp-jppjvorndzppqro20-mfxkw-worker-profile
+      instanceType: m5.xlarge
+      kind: AWSMachineProviderConfig
+      metadata:
+        creationTimestamp: null
+      placement:
+        availabilityZone: us-east-1c
+        region: us-east-1
+      publicIp: null
+      securityGroups:
+      - filters:
+        - name: tag:Name
+          values:
+          - ocp-jppjvorndzppqro20-mfxkw-worker-sg
+      subnet:
+        filters:
+        - name: tag:Name
+          values:
+          - ocp-jppjvorndzppqro20-mfxkw-private-us-east-1c
+      tags:
+      - name: kubernetes.io/cluster/ocp-jppjvorndzppqro20-mfxkw
+        value: owned
+      - name: owner
+        value: gls-platforms@redhat.com
+      - name: platform
+        value: gls
+      - name: Stack
+        value: project ocp-jppjvorndzppqro200626
+      - name: course_name
+        value: do280
+      - name: env_type
+        value: ocp4-workshop
+      - name: guid
+        value: jppjvorndzppqro200626
+      userDataSecret:
+        name: worker-user-data
+status:
+  addresses:
+  - address: 10.0.129.62
+    type: InternalIP
+  - address: ""
+    type: ExternalDNS
+  - address: ip-10-0-129-62.ec2.internal
+    type: InternalDNS
+  lastUpdated: "2020-07-16T19:53:59Z"
+  nodeRef:
+    kind: Node
+    name: ip-10-0-129-62.ec2.internal
+    uid: 052584b8-c79e-11ea-807e-0a9c0d887b9f
+  providerStatus:
+    apiVersion: awsproviderconfig.openshift.io/v1beta1
+    conditions:
+    - lastProbeTime: "2020-07-16T19:48:57Z"
+      lastTransitionTime: "2020-07-16T19:48:57Z"
+      message: machine successfully created
+      reason: MachineCreationSucceeded
+      status: "True"
+      type: MachineCreation
+    instanceId: i-02e826e2da310bad1
+    instanceState: running
+    kind: AWSMachineProviderStatus
