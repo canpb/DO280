@@ -1,0 +1,88 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  creationTimestamp: "2020-06-26T17:15:59Z"
+  generation: 6
+  labels:
+    env: prod
+    machine.openshift.io/cluster-api-cluster: ocp-jppjvorndzppqro20-mfxkw
+  name: ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c
+  namespace: openshift-machine-api
+  resourceVersion: "3395661"
+  selfLink: /apis/machine.openshift.io/v1beta1/namespaces/openshift-machine-api/machinesets/ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c
+  uid: b451e050-b7d0-11ea-afd2-0ae71f6b4225
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: ocp-jppjvorndzppqro20-mfxkw
+      machine.openshift.io/cluster-api-machineset: ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        machine.openshift.io/cluster-api-cluster: ocp-jppjvorndzppqro20-mfxkw
+        machine.openshift.io/cluster-api-machine-role: worker
+        machine.openshift.io/cluster-api-machine-type: worker
+        machine.openshift.io/cluster-api-machineset: ocp-jppjvorndzppqro20-mfxkw-worker-us-east-1c
+    spec:
+      metadata:
+        creationTimestamp: null
+        labels:
+          env: prod
+      providerSpec:
+        value:
+          ami:
+            id: ami-01e7fdcb66157b224
+          apiVersion: awsproviderconfig.openshift.io/v1beta1
+          blockDevices:
+          - ebs:
+              iops: 0
+              volumeSize: 120
+              volumeType: gp2
+          credentialsSecret:
+            name: aws-cloud-credentials
+          deviceIndex: 0
+          iamInstanceProfile:
+            id: ocp-jppjvorndzppqro20-mfxkw-worker-profile
+          instanceType: m5.xlarge
+          kind: AWSMachineProviderConfig
+          metadata:
+            creationTimestamp: null
+          placement:
+            availabilityZone: us-east-1c
+            region: us-east-1
+          publicIp: null
+          securityGroups:
+          - filters:
+            - name: tag:Name
+              values:
+              - ocp-jppjvorndzppqro20-mfxkw-worker-sg
+          subnet:
+            filters:
+            - name: tag:Name
+              values:
+              - ocp-jppjvorndzppqro20-mfxkw-private-us-east-1c
+          tags:
+          - name: kubernetes.io/cluster/ocp-jppjvorndzppqro20-mfxkw
+            value: owned
+          - name: owner
+            value: gls-platforms@redhat.com
+          - name: platform
+            value: gls
+          - name: Stack
+            value: project ocp-jppjvorndzppqro200626
+          - name: course_name
+            value: do280
+          - name: env_type
+            value: ocp4-workshop
+          - name: guid
+            value: jppjvorndzppqro200626
+          userDataSecret:
+            name: worker-user-data
+status:
+  availableReplicas: 4
+  fullyLabeledReplicas: 4
+  observedGeneration: 6
+  readyReplicas: 4
+  replicas: 4
