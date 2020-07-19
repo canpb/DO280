@@ -1,0 +1,1 @@
+openshift-console          console                          console-openshift-console.apps.ocp-jppjvorndzppqro200626.do280.rht-na.nextcle.com                           console                     https      reencrypt/Redirect     None
