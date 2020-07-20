@@ -1,0 +1,138 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-schedule-pods - lab script for DO280-OCP4
+#
+# SYNOPSIS
+#     lab-schedule-pods {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Thu Dec 05 2019 Michael Phillips <miphilli@redhat.com>
+#   - Change the function ocp4_add_self_provisioning to use the function name with a typo: ocp4_add_self_provisioing
+#   * Wed Nov 27 2019 Michael Phillips <miphilli@redhat.com>
+#   - Added lines for functions ocp4_add_self_provisioning and ocp4_cleanup_lab_files
+#   * Fri Oct 25 2019 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='schedule-pods'
+title='Guided Exercise: Controlling Pod Scheduling Behavior'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  print_line
+  ocp4_fail_if_project_exists "${this}" "${this}-ts"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  ocp4_print_setup_header
+
+  ocp4_install_oc
+
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files
+
+  # Configure environment for the troubleshooting portion of the exercise
+  # Identify worker nodes and give the first one a label of class=ACME
+  # First check that none of the nodes already has this label
+  if ! oc get nodes -L client -l node-role.kubernetes.io/worker | grep -qi ACME
+  then
+    # Label the first worker node with class=ACME
+    pad2 "Label the first worker node with 'client=ACME'"
+    if oc label $(oc get nodes -l node-role.kubernetes.io/worker -o name | head -n1) client=ACME
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Create the troubleshooting project
+  pad2 "Create project '${this}-ts' for troubleshooting"
+  if oc new-project "${this}-ts"
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  # Grant the developer the edit role on the schedule-pods-ts project
+  pad2 "Assign 'edit' role to 'developer' on '${this}-ts'"
+  if oc adm policy add-role-to-user edit developer -n ${this}-ts
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  # Deploy broken application
+  pad2 "Deploy 'hello-ts' application to '${this}-ts'"
+  if oc create --save-config -f /home/student/DO280/labs/${this}/deployment-hello-ts.yaml
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}" "${this}-ts"
+  ocp4_cleanup_lab_files
+
+  # Remove labels added to worker nodes
+  for LABEL in env client
+  do
+    if [ $(oc get nodes -l node-role.kubernetes.io/worker --show-labels | grep ${LABEL}= | wc -l) -gt 0 ]
+    then
+      pad2 "Remove '${LABEL}' label from worker nodes"
+      if oc label $(oc get nodes -l node-role.kubernetes.io/worker -o name) ${LABEL}-
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+    fi
+  done
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

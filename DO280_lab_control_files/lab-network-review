@@ -1,0 +1,268 @@
+#!/bin/bash
+#
+# Copyright 2019 Red Hat, Inc.
+#
+# NAME
+#     lab-network-review - DO280-OCP4
+#       Configuring OpenShift Networking Components
+#
+# SYNOPSIS
+#     lab-network-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start, grade, or finish.
+#
+# CHANGELOG
+#   * Mon Dec 16 2019 Razique Mahroua <rmahroua@redhat.com>
+#   - original code
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+
+# This defines which subcommands are supported (start, grade, etc.).
+# Usually GEs do not have a grade verb
+# Corresponding lab_COMMAND functions must be defined.
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='network-review'
+title='Configuring OpenShift Networking Components'
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+
+  print_line ' Preparing Workstation:'
+  ocp4_install_oc
+  ocp4_grab_lab_files
+
+  print_line ' Configuring Certificates:'
+  pad ' · Generating unique CA key password'
+  if openssl rand -base64 24 > ${labs}/${this}/certs/passphrase.txt; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad ' · Setting environment variable in cert. configuration file'
+  if RHT_OCP4_WILDCARD_DOMAIN=${RHT_OCP4_WILDCARD_DOMAIN} \
+      RHT_OCP4_BASE_DOMAIN=${RHT_OCP4_WILDCARD_DOMAIN#apps.} \
+      envsubst < ${labs}/${this}/certs/training.template >> ${labs}/${this}/certs/training.ext; then
+    rm -f ${labs}/${this}/certs/training.template
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad ' · Generating the CA key'
+  if openssl genrsa -des3 \
+      -out ${labs}/${this}/certs/training-CA.key \
+      -passout file:${labs}/${this}/certs/passphrase.txt 2048; then
+    print_SUCCESS
+  else
+    print_FAIL
+    exit 1
+  fi
+
+  pad ' · Generating CA certificate'
+  if openssl req \
+      -x509 -new -nodes -sha256 -days 3650 \
+      -key ${labs}/${this}/certs/training-CA.key \
+      -subj "/C=US/ST=North Carolina/L=Raleigh/O=Red Hat/CN=${RHT_OCP4_WILDCARD_DOMAIN#apps.}" \
+      -passin file:${labs}/${this}/certs/passphrase.txt \
+      -out ${labs}/${this}/certs/training-CA.pem; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad ' · Creating private key'
+  if openssl genrsa \
+      -out ${labs}/${this}/certs/training.key 2048; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  pad ' · Updating privileges on certs directory'
+  # if chown -R student:student /home/student/${RHT_COURSE^^}/{labs,solutions}/${this}/certs/; then
+  if chown -R student:student ${labs}/${this}/certs/; then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+  local quay_image='quay.io/redhattraining/php-ssl'
+  local http_deployment='php-http'
+  local http_tag='v1.0'
+  local https_deployment='php-https'
+  local https_tag='v1.1'
+  local cert_path="${labs}/${this}/certs/training.crt"
+  local secret='php-certs'
+
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  pad2 "${this} is present"
+  if oc get projects ${this}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${http_deployment} deployment is present"
+  if oc describe deployments ${http_deployment} -n ${this}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${http_deployment} deployment points to v1.0 of the application"
+  local deployment_image=$(oc get deployments ${http_deployment} -n ${this} -o jsonpath='{.spec.template.spec.containers[0].image}')
+  if [ "${deployment_image}" == "${quay_image}:${http_tag}" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${http_deployment} deployment uses port 8080"
+  local deployment_port=$(oc get deployments ${http_deployment} -n ${this} -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}')
+  if [ "${deployment_port}" == "8080" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${http_deployment} container is running"
+  local container_status=$(oc get pods -l app=${http_deployment} -n ${this} -o jsonpath='{.items[0].status.phase}')
+  if [ "${container_status}" == "Running" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route for ${http_deployment} is present"
+  local route_name=$(oc get routes -l app=${http_deployment} -n ${this} -o jsonpath='{.items[0].spec.host}')
+  if [ "${route_name}" == "${http_deployment}.${RHT_OCP4_WILDCARD_DOMAIN}" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route for ${http_deployment} is accessible"
+  local route_name=$(oc get routes -l app=${http_deployment} -n ${this} -o jsonpath='{.items[0].spec.host}')
+  if curl "${route_name}"; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "SSL certificate is present"
+  if [ -f ${cert_path} ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "SSL certificate matches required CN"
+  if  openssl x509 -noout -modulus -text -in ${cert_path} | grep "CN = ${https_deployment}.${RHT_OCP4_WILDCARD_DOMAIN}"; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "TLS secret is present"
+  if oc describe secrets ${secret} -n ${this}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${https_deployment} deployment is present"
+  if oc describe deployments ${https_deployment} -n ${this}; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${https_deployment} deployment points to v1.1 of the application"
+  local deployment_image=$(oc get deployments ${https_deployment} -n ${this} -o jsonpath='{.spec.template.spec.containers[0].image}')
+  if [ "${deployment_image}" == "${quay_image}:${https_tag}" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${https_deployment} deployment uses port 8443"
+  local deployment_port=$(oc get deployments ${https_deployment} -n ${this} -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}')
+  if [ "${deployment_port}" == "8443" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "${https_deployment} container is running"
+  local container_status=$(oc get pods -l app=${https_deployment} -n ${this} -o jsonpath='{.items[0].status.phase}')
+  if [ "${container_status}" == "Running" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route for ${https_deployment} is present"
+  local route_name=$(oc get routes -l app=${https_deployment} -n ${this} -o jsonpath='{.items[0].spec.host}')
+  if [ "${route_name}" == "${https_deployment}.${RHT_OCP4_WILDCARD_DOMAIN}" ]; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route for ${https_deployment} is accessible using TLS CA"
+  local route_name=$(oc get routes -l app=${https_deployment} -n ${this} -o jsonpath='{.items[0].spec.host}')
+  if curl --cacert ${labs}/${this}/certs/training-CA.pem "${route_name}"; then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+  ocp4_login_as_admin
+
+  ocp4_delete_project "${this}"
+
+  ocp4_cleanup_lab_files
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

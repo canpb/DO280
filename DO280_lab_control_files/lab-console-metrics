@@ -1,0 +1,208 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-console-admin - lab script for DO280-OCP4
+#
+# SYNOPSIS
+#     lab-console-admin {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Fri Dec 6 2019 Joel Birchler <jbirchler@redhat.com>
+#   - initial creation
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='console-metrics'
+project='console-apps'
+title='Guided Exercise: Examining Cluster Metrics'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+
+  ocp4_print_setup_header
+  ocp4_install_oc
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files no_solution
+  chmod +x /home/student/DO280/labs/console-metrics/load.sh
+
+  # Create the project (if it doesn't exist)
+  if ! oc get project "${project}"
+  then
+    pad2 "Create project '${project}'"
+    if oc new-project "${project}"
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Apply quota (even if it exists, to ensure correct settings)
+  pad2 "Ensuring ResourceQuota 'quota' exists"
+  if oc apply -n console-apps -f - <<QUOTA
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: quota
+  namespace: console-apps
+spec:
+  hard:
+    pods: '10'
+    requests.cpu: '2'
+    requests.memory: 8Gi
+    limits.cpu: '4'
+    limits.memory: 12Gi
+QUOTA
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  # Apply limit-range (even if it exists, to ensure correct settings)
+  pad2 "Ensuring LimitRange 'limit-range' exists"
+  if oc apply -n console-apps -f - <<LIMIT_RANGE
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limit-range
+  namespace: console-apps
+spec:
+  limits:
+    - default:
+        cpu: 500m
+        memory: 5Gi
+      defaultRequest:
+        cpu: 10m
+        memory: 100Mi
+      type: Container
+LIMIT_RANGE
+  then
+    print_SUCCESS
+  else
+    print_FAIL
+  fi
+
+  # Create the books deployment from console-workloads (if it doesn't exist)
+  if ! oc get -n console-apps deployment books
+  then
+    pad2 "Create deployment 'books'"
+    if oc create -n console-apps -f - <<BOOKS_DEPLOYMENT
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: books
+  namespace: console-apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: books
+  template:
+    metadata:
+      labels:
+        app: books
+    spec:
+      containers:
+        - name: books
+          image: 'quay.io/redhattraining/books:v1.4'
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+BOOKS_DEPLOYMENT
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Create the books svc from console-workloads (if it doesn't exist)
+  if ! oc get -n console-apps svc books
+  then
+    pad2 "Create service 'books'"
+    if oc create -n console-apps -f - <<BOOKS_SERVICE
+kind: Service
+apiVersion: v1
+metadata:
+  name: books
+  namespace: console-apps
+spec:
+  selector:
+    app: books
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+BOOKS_SERVICE
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Create the books route from console-workloads (if it doesn't exist)
+  if ! oc get -n console-apps route books
+  then
+    pad2 "Create route 'books'"
+    if oc expose svc/books -n console-apps
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+
+  ocp4_delete_project "${project}"
+  ocp4_delete_group "project-team"
+  ocp4_delete_user_htpasswd "tester"
+  ocp4_delete_user "tester"
+  ocp4_cleanup_lab_files no_solution
+
+  ocp4_print_cleanup_footer
+}
+
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

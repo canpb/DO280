@@ -1,0 +1,271 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-authorization-review - lab script for DO280-OCP4
+#                          Controlling Access to OpenShift Resources
+#
+# SYNOPSIS
+#     lab-authorization-review {start|finish}
+#
+#        start   - prepare the system for starting the lab
+#        finish  - perform post-lab finish
+#        grading - perform grading for the lab
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Fri Dec 04 2019 Iván Chavero <ichavero@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish grade)
+
+# Change these variables to match your exercise
+this='authorization-review'
+title='Lab: Controlling Access to OpenShift Resources'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure
+
+  ocp4_print_setup_header
+
+  ocp4_add_standard_users
+  ocp4_add_user_htpasswd 'qa' 
+  ocp4_install_oc
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+ ocp4_print_grade_header
+
+  print_line " Verifying the information collected about the cluster:"
+
+  ocp4_login_as_admin
+
+  #Verify the ability to create projects
+  pad2 "The 'developer' user is not allowed to create projects"
+  if oc new-project test-as --as="developer"
+  then
+    oc delete project test-as
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the group wp-mgrs exist
+  pad2 "The group 'wp-mgrs' exists"
+  if oc get group wp-mgrs
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  #Verify that the leader user is in the wp-mgrs group
+  pad2 "The leader user is in the 'wp-mgrs' group"
+  if ! oc get group wp-mgrs | grep -w leader
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that users in the group wp-mgrs can create projects
+  pad2 "Users in the group 'wp-mgrs' can create projects"
+  if oc new-project test-mgrs --as="leader"
+  then
+    oc delete project test-mgrs
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the authorization-review project exists
+  pad2 "The 'authorization-review' project exists"
+  if ! oc project authorization-review 
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the group wp-devs exists
+  pad2 "The group 'wp-devs' exists"
+  if ! oc get group wp-devs 
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the developer user is in the wp-dev group
+  pad2 "The 'developer' user is in the 'wp-dev' group"
+  if ! oc get group wp-devs -o jsonpath='{.users}' | grep -w developer
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the group wp-qa exists
+  pad2 "The group 'wp-qa' exists"
+  if ! oc get group wp-qa
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the qa user is in the QA group
+  pad2 "The 'qa' user is in the 'wp-qa' group"
+  if ! oc get group wp-qa -o jsonpath='{.users}' | grep -w qa
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the review-secret exists
+  pad2 "The 'review-secret' exists"
+  if ! oc get secret review-secret 
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the mysql application exists
+  pad2 "The 'mysql' application exists"
+  if ! oc get dc mysql
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the review-secret secret was used to initialize the mysql environment variables
+  pad2 "The 'review-secret' secret was used to initialize the 'mysql' application environment variables"
+  if ! oc describe dc mysql | grep MYSQL_
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the wordpress application exists
+  pad2 "The 'wordpress' application exists"
+  if ! oc get dc wordpress 
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the review-secret secret was used to initialize the wordpress environment variables
+  pad2 "The 'review-secret' secret was used to initialize the 'wordpress' application environment variables"
+  if ! oc describe dc wordpress | grep WORDPRESS_DB_
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the qa user can’t edit the wordpress deployment
+  pad2 "The 'qa' user can't edit the 'wordpress' deployment configuration"
+  if ! oc scale dc wordpress --replicas=3
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the qa user can view the mysql 
+  pad2 "The 'qa' user can view the 'mysql' deployment configuration"
+  if ! oc get dc mysql 
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the qa user can view the wordpress deployment
+  pad2 "The 'qa' user can view the 'wordpress' deployment configuration"
+  if ! oc get dc wordpress 
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  #Verify that the wp-devs group has edit permissions in the project authorization-review 
+  pad2 "The 'wp-devs' group has edit permissions in the project 'authorization-review'"
+  oc login -u developer -p ${RHT_OCP4_USER_PASSWD} ${RHT_OCP4_MASTER_API}
+  if ! oc new-app --name=grade-httpd httpd
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+  oc delete all -l app=grade-httpd
+  oc delete imagestream.image.openshift.io/grade-httpd
+
+  #Verify that users in the wp-qa group have view permissions in the project authorization-review 
+  pad2 "Users in the 'wp-qa' group have view permissions in the project 'authorization-review'"
+
+  oc login -u qa -p ${RHT_OCP4_USER_PASSWD} ${RHT_OCP4_MASTER_API}
+  if ! oc get all  
+  then
+    print_FAIL
+  else
+    print_PASS
+  fi
+
+  ocp4_print_grade_footer
+}
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+  ocp4_delete_all_idp
+  ocp4_delete_group wp-devs wp-qa wp-mgrs
+  pad2 "Restoring cluster privileges"
+  if ! oc adm policy add-cluster-role-to-group \
+    --rolebinding-name self-provisioners \
+    self-provisioner system:authenticated:oauth
+   then
+    print_FAIL
+  else
+    print_SUCCESS
+  fi
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

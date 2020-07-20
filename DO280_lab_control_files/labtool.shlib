@@ -1,0 +1,466 @@
+#
+# Copyright 2010-2019 Red Hat, Inc.
+#
+# NAME
+#     labtool.shlib - lab grading script function library
+#
+# SYNOPSIS
+#     Add the following line at the top of your script:
+#
+#        source /path/to/labtool.shlib
+#
+# DESCRIPTION
+#
+#     Use the log function to silently send a message to syslog.
+#
+#	 log 'something happened'
+#
+#     Even better, use the debug function to send messages to the
+#     syslog. The difference is that debug messages are also sent to
+#     stdout if DEBUG=true is set in your script or in the environment.
+#
+#	debug 'something happened'
+#
+#     Use the warn function to send messages to syslog *and* print
+#     them to the screen. Execution will continue.
+#
+#	warn 'something happened'
+#
+#     Use the fatal function to send messages to syslog *and* print
+#     them to the screen. The script will exit immediately and return
+#     the exit status passed as the first parameter.
+#
+#	fatal # 'something happened'
+#
+#     You can override the default LOG_TAG with the name of your
+#     script. To override the default LOG_TAG (or any of the default
+#     below) just change the value in your script.
+#
+#	LOG_TAG="hammertime"
+#
+#     If a script must run as root, use the check_root function. If the
+#     script is not running as root, it will tell the user and exit.
+#
+#	check_root
+#
+#     Before performing any grading functions, all of the affected hosts
+#     should be running. The host_reachable function confirms that a host
+#     (passed as the argument) responds to ping and can be reached via
+#     SSH. This function panics when a required host is not reachable.
+#
+#	host_reachable servera
+#	host_reachable satellite
+#
+# CHANGELOG
+#   * Fri Aug 23 2019 Fernando Lozano <flozano@redhat.com>
+#   - added global 'command not found' handler
+#   - added pad2 function that wraps long messages and adds bullets
+#   * Tue Jun 04 2019 George Hacker <ghacker@redhat.com>
+#   - added __print_error private library function
+#   * Thu Jun 22 2017 George Hacker <ghacker@redhat.com>
+#   - added spinner function (thanks for the idea, Razique)
+#   * Thu Jun 15 2017 George Hacker <ghacker@redhat.com>
+#   - make /var/tmp/labs/ log directory permission 777
+#   * Wed Oct 19 2016 George Hacker <ghacker@redhat.com>
+#   - incorporated Chen's IO handling, logs are in /var/tmp/labs/
+#   * Thu Jan 28 2016 George Hacker <ghacker@redhat.com>
+#   - adjusted print_* functions so they always return 0
+#   * Fri Jan 22 2016 George Hacker <ghacker@redhat.com>
+#   - added general purpose print_usage function
+#   - added Wander's pad function
+#   * Mon Nov 23 2015 George Hacker <ghacker@redhat.com>
+#   - use sudo -E option to ensure "lab" exports are propagated
+#   * Fri Nov 13 2015 George Hacker <ghacker@redhat.com>
+#   - provide grading_main_program function for problem scripts
+#   - define useful default values for ${ssh} and ${scp}
+#   - implemented PRINT_* function counters
+#   - deprecated get_X and check_host functions
+#   * Thu Oct 22 2015 George Hacker <ghacker@redhat.com>
+#   - added host_reachable function
+#   * Mon Feb 23 2015 Robert Locke <rlocke@redhat.com>
+#   - clean get_X to simplify and tie in to /etc/rht
+#   * Thu Oct  2 2014 George Hacker <ghacker@redhat.com>
+#   - added warn and fatal functions
+#   - fixed stationNum and MYHOST caculation (server33-a -> server-a)
+#   - added MYHOSTX variable (server33-a -> serverX-a)
+#   * Thu Sep  2 2010 Joshua M. Hoffman
+#   - original code
+#
+# <blink>
+   ###################### IMPORTANT ########################
+   ###### DO NOT MAKE ANY CHANGES TO THIS FILE. IT IS ######
+   ###### MAINTAINED BY GHACKER@REDHAT.COM.           ######
+   #########################################################
+# </blink>
+
+# defaults, but use exported values if they are set
+: ${LOG_FACILITY:=local0}
+: ${LOG_PRIORITY:=info}
+: ${LOG_TAG:="${0##*/}"}
+ERROR_MESSAGE="Error running script. Contact your instructor if you continue
+to see this message."
+PACKAGES=( bash )
+ssh=${ssh-ssh -o StrictHostKeyChecking=no}
+scp=${scp-scp -o StrictHostKeyChecking=no -q}
+
+# initialize PRINT_* counters to zero
+pass_count=0 ; fail_count=0 ; success_count=0
+
+# paths
+logger='/bin/logger'
+rpm='/bin/rpm'
+
+SUDO='/usr/bin/sudo'
+
+# Export LANG so we get consistent results
+# For instance, fr_FR uses comma (,) as the decimal separator.
+export LANG=en_US.UTF-8
+
+# Read in RHT parameters if available
+[[ -r /etc/rht ]] && source /etc/rht
+
+
+# You never invoke the following function.
+# Bash does automatically when it cannot find a command
+# It is here so typos in funcion names are not hidden in the /var/tmp/labs/* log files
+
+function command_not_found_handle {
+  local command="$1"
+
+  print_line
+  print_line
+  pad "Found bug in lab script?"
+  print_FAIL
+  fatal 127 "Command or function not found: '${command}'"
+  print_line
+}
+
+
+function print_header {
+  if [[ $# -gt 0 ]]
+  then
+    echo -e "\n${@}\n"
+    echo -e "\n${@}\n" >&2
+    echo -e "\n${@}\n" >&3
+  fi
+}
+
+
+function print_line {
+  echo "${@}"
+  echo "${@}" >&2
+  echo "${@}" >&3
+}
+
+
+function spinner {
+  local -r pid="${1}" delay="${2-3}"
+  local -r spinchars=( '|' '/' '-' '\' )
+  local s=0
+  printf "[${spinchars[${s}]}]" >&3
+  while kill -0 ${pid} &> /dev/null; do
+    sleep ${delay}
+    printf "\b\b${spinchars[$((++s%4))]}]" >&3
+  done
+  printf '\b\b\b' >&3
+}
+
+
+# print to logfile *only*
+function log {
+  if [[ $# -gt 0 ]]
+  then
+    ${logger} -p ${LOG_FACILITY}.${LOG_PRIORITY} -t ${LOG_TAG} -- "${@}"
+  else
+    while read data
+    do
+      ${logger} -p ${LOG_FACILITY}.${LOG_PRIORITY} -t ${LOG_TAG} -- "${data}"
+    done
+  fi
+}
+
+
+# print/log and immediately exit
+function fatal {
+  exit_status=${1:=127}
+  shift
+  print_line "${@}"
+  log "${@}"
+  exit ${exit_status}
+}
+
+
+# print/log and continue execution
+function warn {
+  print_line "${@}"
+  log "${@}"
+}
+
+
+# print to screen and log (only active when DEBUG is 'true')
+function debug {
+  if [[ "$DEBUG" = 'true' ]]
+  then
+    if [[ $# -gt 0 ]]
+    then
+      echo "DEBUG: ${@}"
+      log "DEBUG: ${@}"
+    else
+      while read data
+      do
+	echo "DEBUG: ${data}"
+        log "DEBUG: ${data}"
+      done
+    fi
+  fi
+}
+
+
+# exit if not root
+function check_root {
+  if [[ "${EUID}" -gt 0 ]]
+  then
+    fatal 1 'This script must be run as root!'
+  fi
+}
+
+
+# exit if needed packages missing
+function check_packages {
+  for package in ${PACKAGES[@]}
+  do
+    if ${rpm} -q ${package} &> /dev/null
+    then
+      continue
+    else
+      fatal 2 "Please install ${package} and try again."
+    fi
+  done
+}
+
+
+# exit when user answers 'N'
+function confirm {
+  read -p "Is this ok [y/N]: " userInput
+  case "${userInput:0:1}" in
+    "y" | "Y")
+      return 0
+      ;;
+    *)
+      fatal 3 'Script aborted.'
+      ;;
+  esac
+}
+
+
+function check_tcp_port {
+  if [[ ${#1} -gt 0 && ${#2} -gt 0 ]]
+  then
+    # Sending it to the log always returns 0
+    ($(echo "brain" >/dev/tcp/$1/$2)) && return 0
+  fi
+  return 1
+}
+
+
+function wait_tcp_port {
+  if [[ ${#1} -gt 0 && ${#2} -gt 0 ]]; then
+    # Make sure it is pingable before we attempt the port check
+    echo
+    echo -n "Pinging $1"
+    until `ping -c1 -w1 $1 &> /dev/null`;do
+      echo -n "."
+      sleep 3
+    done
+    iterations=0
+    echo
+    echo 'You may see a few "Connection refused" errors before it connects...'
+    sleep 10
+    until [[ "$remote_port" == "smart" || $iterations -eq 30 ]]; do
+      ($(echo "brain" >/dev/tcp/$1/$2) ) && remote_port="smart" || remote_port="dumb"
+      sleep 3
+      iterations=$(expr $iterations + 1)
+    done
+    [[ $remote_port == "smart" ]] && return 0
+  fi
+  return 1
+}
+
+
+function pad {
+  local text="$1"
+  local dots='...............................................................'
+
+  local spacers='!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+  local spacerpad=$(( (${#spacers} - ${#text} - 2) / 2 ))
+
+  printf '\n\n%s\n' "${spacers}"
+  printf '!%s%s !\n' "${text}" "${dots:${#text}}"
+  printf '%s\n' "${spacers}"
+
+  printf '\n\n%s\n' "${spacers}" >&2
+  printf '!%s%s !\n' "${text}" "${dots:${#text}}" >&2
+  printf '%s\n' "${spacers}" >&2
+
+  printf '%s%s  ' "${text}" "${dots:${#text}}" >&3
+}
+
+
+# The following function is an improvement over the pad function that adds:
+# - wraps long lines to keep the SUCCESS/PASS/FAIL messages aligned
+# - prepends the message with a bullet so you don't need to find how to type it.
+
+function pad2 {
+  local msg="$( echo $@ | sed -e 's/^[[:space:]]*//' | sed -e 's/[[:space:]]*$//' )"
+  local max=60
+  local len="${#msg}"
+  local prefix=' · '
+  while [ "${len}" -ge "${max}" ]; do
+    print_line "${prefix}${msg:0:${max}}"
+    local msg="$( echo ${msg:${max}:${len}} | sed -e 's/^[[:space:]]*//' | sed -e 's/[[:space:]]*$//' )"
+    local len="${#msg}"
+    local prefix='   '
+  done
+  pad "${prefix}${msg}"
+}
+
+
+function print_FAIL {
+  [[ $# -gt 0 ]] && echo -n "$@ "
+  __print_status FAIL 31
+  let fail_count++
+  return 0
+}
+
+
+function print_PASS {
+  [[ $# -gt 0 ]] && echo -n "$@ "
+  __print_status PASS 32
+  let pass_count++
+  return 0
+}
+
+
+function print_SUCCESS {
+  [[ $# -gt 0 ]] && echo -n "$@ "
+  __print_status SUCCESS 36
+  let success_count++
+  return 0
+}
+
+
+function print_usage {
+  cat << EOF
+This script controls the setup and grading of this lab.
+Usage: ${lab_demo_mode} ${problem_name} COMMAND
+       ${lab_demo_mode} ${problem_name} -h|--help
+
+COMMAND is one of: ${valid_commands[@]}
+
+EOF
+}
+
+
+function __log_on {
+  LOG_DIR='/var/tmp/labs'
+  LOG="${LOG_DIR}/${problem_name}"
+
+  if [[ ! -d ${LOG_DIR} ]]
+  then
+    if ! mkdir -p -m 0777 ${LOG_DIR}
+    then
+      echo "Failed to create ${LOG_DIR}"
+      exit 1
+    fi
+  fi
+
+  exec 3>&1 1>>"${LOG}" 2>>"${LOG}.err"
+
+  echo -e "\n\n#################### $(date) ####################\n"
+  echo -e "\n\n#################### $(date) ####################\n" >&2
+}
+
+
+function __print_status {
+  local text="${1}" color="${2}"
+  local spacers='!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!'
+  local spacerpad
+
+  if [[ $# -eq 2 ]]
+  then
+    echo -e "\\033[1;${color}m${text}\\033[0;39m" >&3
+    spacerpad=$(( (${#spacers} - ${#text} - 2) / 2 ))
+    printf '%s %s %s\n' "${spacers:0:$spacerpad}"  "${text}" "${spacers:$((${#spacer} - $spacerpad))}"
+    printf '%s %s %s\n' "${spacers:0:$spacerpad}"  "${text}" "${spacers:$((${#spacer} - $spacerpad))}" >&2
+  else
+    __print_error 'only two arguments allowed'
+  fi
+}
+
+
+# private library function used by other functions that displays the
+# name of the parent function and line number of the source file where
+# the function was called
+function __print_error () {
+
+  local lib_function=${FUNCNAME[1]}
+  local parent=${BASH_SOURCE[2]##*/} line=${BASH_LINENO[1]}
+
+  warn "${lib_function}: $@ (${parent}:${line})"
+}
+
+
+function host_reachable {
+  local host
+  for host do
+    if [[ -z "${host}" ]] || 
+       ! ping -c 1 -w 2 "${host}" &> /dev/null ||
+       ! check_tcp_port "${host}" 22 &> /dev/null
+    then
+      fatal 4 "${host} cannot be reached"
+    fi
+  done
+}
+
+
+function grading_main_program {
+
+  if [[ "${1}" == '-h' || "${1}" == '--help' ]]; then
+    print_usage
+    exit 0
+  fi
+
+  # Check if to be run as root (must do this early)
+  if [[ "${run_as_root}" == 'true' && "${EUID}" -gt "0" ]] ; then
+    ${SUDO:-sudo} $0 "$@"
+    exit
+  fi
+
+  __log_on
+
+  # Parse the command line and validate command
+  cmd=''
+  for command in ${valid_commands[@]}; do
+    [[ "${1}" == "${command}" ]] && { cmd="${command}"; break; }
+  done
+  if [[ -z "${cmd}" ]]; then
+    warn "Missing or unrecognized command - ${1}"
+    print_usage 1>&3
+    exit 1
+  fi
+
+  myhost=$(hostname -s)
+  if [[ "${myhost}" != 'workstation' ]]
+  then
+    warn "Error: bad or missing hostname - ${myhost}"
+    fatal 2 'This command only runs on workstation.'
+  fi
+
+  debug "STARTING lab_${cmd}"
+  lab_${cmd}
+  debug "lab_${cmd} - DONE"
+  [[ ${fail_count} -eq 0 ]]
+
+}
+
+# vim: ai sw=2

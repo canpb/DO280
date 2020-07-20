@@ -1,0 +1,270 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-schedule-review - lab script for DO280-OCP4
+#
+# SYNOPSIS
+#     lab-schedule-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - evaluate student work
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on a singular argument, either does start,
+#     grade, or finish for the [name of the exercise]
+#
+# CHANGELOG
+#   * Thu Dec 05 2019 Michael Phillips <miphilli@redhat.com>
+#   - Change the function ocp4_add_self_provisioning to use the function name with a typo: ocp4_add_self_provisioing
+#   * Wed Nov 27 2019 Michael Phillips <miphilli@redhat.com>
+#   - Added lines for functions ocp4_add_self_provisioning and ocp4_cleanup_lab_files
+#   * Mon Nov 18 2019 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='schedule-review'
+title='Lab: Controlling Pod Scheduling'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  print_line
+  ocp4_fail_if_project_exists "${this}" "${this}-ts"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+
+  ocp4_print_setup_header
+
+  ocp4_install_oc
+
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files no_solution
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_grade {
+  local app_name="loadtest"
+  local cpu_request="100m"
+  local mem_request="20Mi"
+  local hpa_max="40"
+  local hpa_min="2"
+  local hpa_cpu="70"
+  local app_target_label="silver"
+  local quota_name="review-quota"
+  local quota_mem="2G"
+  local quota_cpu="1"
+  local quota_pods="20"
+
+  ocp4_print_grade_header
+
+  ocp4_login_as_admin
+
+  pad2 "Worker node has label 'tier=gold'"
+  if [ $(oc get nodes -l node-role.kubernetes.io/worker -l tier=gold -o name | wc -l) -eq 1 ]
+  then
+    local gold_node="$(oc get nodes -l node-role.kubernetes.io/worker -l tier=gold -o name)"
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Worker node has label 'tier=silver'"
+  if [ $(oc get nodes -l node-role.kubernetes.io/worker -l tier=silver -o name | wc -l) -eq 1 ]
+  then
+    local silver_node="$(oc get nodes -l node-role.kubernetes.io/worker -l tier=silver -o name)"
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Project '${this}' exists"
+  if oc project ${this}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application '${app_name}' exists"
+  # Check to see if students created a k8s deployment
+  if [ $(oc get deployment -l app=${app_name} -o name | wc -l) -eq 1 ]
+  then
+    local app_config=$(oc get deployment -l app=${app_name} -o name)
+    print_PASS
+  # Check to see if students created an OpenShift deployment config
+  elif [ $(oc get dc -l app=${app_name} -o name | wc -l) -eq 1 ]
+  then
+    local app_config=$(oc get dc -l app=${app_name} -o name)
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route '${app_name}' exists for the '${app_name}' application"
+  if oc get route/${app_name} -o jsonpath='{.spec.host}'
+  then
+    local fqdn="$(oc get route/${app_name} -o jsonpath='{.spec.host}')"
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application '${app_name}' responds to a curl request"
+  if curl http://${fqdn}/api/loadtest/v1/heathz
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application '${app_name}' specifies correct node selector"
+  if [ $(oc get ${app_config} -o jsonpath='{.spec.template.spec.nodeSelector.tier}') == "${app_target_label}" ]
+  then
+    # Check that a deployed pod has the matching nodeSelector
+    if [ $(oc get $(oc get pods -l app=loadtest -o name | head -n1) -o jsonpath='{.spec.nodeSelector.tier}') == "${app_target_label}" ]
+    then
+      print_PASS
+    else
+      print_FAIL
+    fi
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application '${app_name}' requests correct CPU resources"
+  if [ $(oc get ${app_config} -o jsonpath='{.spec.template.spec.containers[0].resources.requests.cpu}') == "${cpu_request}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application '${app_name}' requests correct memory resources"
+  if [ $(oc get ${app_config} -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}') == "${mem_request}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Horizontal pod autoscaler (HPA) '${app_name}' exists"
+  if oc get hpa/${app_name} -o name
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "HPA '${app_name}' specifies correct pod minimum"
+  if [ $(oc get hpa/${app_name} -o jsonpath='{.spec.minReplicas}') -eq "${hpa_min}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "HPA '${app_name}' specifies correct pod maximum"
+  if [ $(oc get hpa/${app_name} -o jsonpath='{.spec.maxReplicas}') -eq "${hpa_max}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "HPA '${app_name}' specifies correct CPU percentage"
+  if [ $(oc get hpa/${app_name} -o jsonpath='{.spec.targetCPUUtilizationPercentage}') -eq "${hpa_cpu}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Resource quota '${quota_name}' exists"
+  if oc get resourcequota/${quota_name} -o name
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Resource quota '${quota_name}' sets correct CPU quota"
+  if [ $(oc get resourcequota/${quota_name} -o jsonpath='{.spec.hard.cpu}') -eq "${quota_cpu}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Resource quota '${quota_name}' sets correct memory quota"
+  if [ $(oc get resourcequota/${quota_name} -o jsonpath='{.spec.hard.memory}') == "${quota_mem}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Resource quota '${quota_name}' sets correct pod quota"
+  if [ $(oc get resourcequota/${quota_name} -o jsonpath='{.spec.hard.pods}') -eq "${quota_pods}" ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files no_solution
+
+  # Remove labels added to worker nodes
+  for LABEL in tier
+  do
+    if [ $(oc get nodes -l node-role.kubernetes.io/worker --show-labels | grep ${LABEL}= | wc -l) -gt 0 ]
+    then
+      pad2 "Remove '${LABEL}' label from worker nodes"
+      if oc label $(oc get nodes -l node-role.kubernetes.io/worker -o name) ${LABEL}-
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+    fi
+  done
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

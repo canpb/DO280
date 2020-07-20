@@ -1,0 +1,118 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-scale-automatic - lab script for DO280-OCP4
+#
+# SYNOPSIS
+#     lab-scale-automatic {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Thu Dec 19 2019 Michael Phillips <miphilli@redhat.com>
+#   - added solution files
+#   * Wed Dec 18 2019 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='scale-automatic'
+title='Guided Exercise: Automatically Scaling an OpenShift Cluster'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  print_line
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+  ocp4_print_setup_header
+
+  print_line " Preparing the student's cluster:"
+  ocp4_install_oc
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+  ocp4_grab_lab_files
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_cleanup_lab_files
+  ocp4_delete_project "${this}"
+
+  # Scale worker nodes down to 1 for each machine set where the replica count is greater than 1
+  for MACHINE in $(oc get machinesets -n openshift-machine-api -o name)
+  do
+    # Check if replica count is greater than 1
+    replica_count="$(oc get ${MACHINE} -n openshift-machine-api -o jsonpath='{.spec.replicas}')"
+    if [ ${replica_count} -gt 1 ]
+    then
+      pad2 "Scaling '${MACHINE}' to 1 replica"
+      if oc scale --replicas 1 ${MACHINE} -n openshift-machine-api
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+    fi
+  done
+
+  # Delete the cluster autoscaler (there should only be one, but delete any that exist)
+  for ClusterAutoscaler in $(oc get clusterautoscalers -o name)
+  do
+    local ca_name="$(oc get ${ClusterAutoscaler} -o jsonpath='{.metadata.name}')"
+    pad2 "Deleting cluster autoscaler '${ca_name}'"
+    if oc delete ${ClusterAutoscaler}
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  # Delete any machine autoscaler
+  for MachineAutoscaler in $(oc get machineautoscalers -n openshift-machine-api -o name)
+  do
+    local ma_name="$(oc get ${MachineAutoscaler} -n openshift-machine-api -o jsonpath='{.metadata.name}')"
+    pad2 "Deleting machine autoscaler '${ma_name}'"
+    if oc delete ${MachineAutoscaler} -n openshift-machine-api
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  done
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

@@ -1,0 +1,267 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-console-review - lab script for DO280-OCP4
+#
+# SYNOPSIS
+#     lab-console-review {start|grade|finish}
+#
+#        start  - prepare the system for starting the lab
+#        grade  - evaluate student work
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on a singular argument, either does start,
+#     grade, or finish for the [name of the exercise]
+#
+# CHANGELOG
+#   * Fri Dec 6 2019 Joel Birchler <jbirchler@redhat.com>
+#   - initial creation
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start grade finish)
+
+# Change these variables to match your exercise
+this='console-review'
+title='Lab: Managing the Cluster with the Web Console'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+  ocp4_print_prereq_header
+  ocp4_is_cluster_up
+
+  ocp4_print_setup_header
+  ocp4_install_oc
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_grab_lab_files no_solution
+
+  ocp4_print_setup_footer
+}
+
+function lab_grade {
+  ocp4_print_grade_header
+  ocp4_login_as_admin
+
+  pad2 "Verifying user from secret: dba"
+  if oc get secret localusers -n openshift-config -o jsonpath="{.data.htpasswd}" | base64 -d  | grep dba
+  then
+    print_PASS
+  else
+   print_FAIL
+  fi
+
+  pad2 "Verifying user from secret: tester"
+  if oc get secret localusers -n openshift-config -o jsonpath="{.data.htpasswd}" | base64 -d  | grep tester
+  then
+    print_PASS
+  else
+   print_FAIL
+  fi
+
+  pad2 "Group 'app-team' exists"
+  if oc get group app-team
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Group 'app-team' includes correct users"
+  if [ $(oc get group app-team -o json | jq '.users | contains(["dba", "developer"])') == 'true' ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Project '${this}' exists"
+  if oc project ${this}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "RoleBinding binds 'tester' user to 'view' role in '${this}' project"
+  if [[ $(oc get rolebindings -n ${this} -o json | jq '.items[] | select(.subjects[0].name == "tester") | .roleRef.name == "view"') =~ 'true' ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "RoleBinding binds 'app-team' group to 'edit' role"
+  if [[ $(oc get rolebindings -n ${this} -o json | jq '.items[] | select(.subjects[0].name == "app-team") | .roleRef.name == "edit"') =~ 'true' ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "ResourceQuota exists"
+  if [ $(oc get resourcequota -n ${this} --no-headers | wc -l) -gt 0 ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "CockroachDB Subscription exists"
+  if oc get subscription cockroachdb -n openshift-operators
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "RoleBinding binds 'dba' user to 'view' role"
+  if [[ $(oc get rolebindings -n openshift-operators -o json | jq '.items[] | select(.subjects[0].name == "dba") | .roleRef.name == "view"') =~ 'true' ]]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "CockroachDB Database exists"
+  if [ $(oc get CockroachDB -n ${this} --no-headers | wc -l) -gt 0 ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Deployment 'exoplanets' exists"
+  if oc get deployment exoplanets -n ${this}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Service 'exoplanets' exists"
+  if oc get service exoplanets -n ${this}
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Route 'exoplanets' exists for the 'exoplanets' application"
+  if oc get route/exoplanets -n ${this}
+  then
+    local fqdn="$(oc get route/exoplanets -n ${this} -o jsonpath='{.spec.host}')"
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  pad2 "Application 'exoplanets' responds with 200 OK"
+  if ocp4_check_http_status '200' "http://${fqdn}/healthz" '3' ]
+  then
+    print_PASS
+  else
+    print_FAIL
+  fi
+
+  ocp4_print_grade_footer
+}
+
+
+function lab_finish {
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+
+  # Remove any CockroachDB instance from project
+  for STATEFULSET in $(oc get statefulsets -o name -n ${this})
+  do
+    local chart_label="$(oc get ${STATEFULSET} -o jsonpath='{.metadata.labels.chart}' -n ${this})"
+    for INSTANCE in $(oc get cockroachdbs.charts.helm.k8s.io -o name -n ${this})
+    do
+      pad2 "Remove CockroachDB instance '${INSTANCE}'"
+      local RETRIES=60
+      if oc delete ${INSTANCE} -n ${this}
+      then
+        while [ "${RETRIES}" -gt 0 ]
+        do
+          if [ $(oc get pods -l chart=${chart_label} -o name -n ${this} | wc -l) -eq 0 ]
+          then
+            print_SUCCESS
+            break
+          elif [ $(oc get pods -l chart=${chart_label} -o name -n ${this} | wc -l) -gt 0 ]
+          then
+            sleep 2
+            let RETRIES=RETRIES-1
+          fi
+        done
+        if [ "${RETRIES}" -eq 0 ]
+        then
+          print_FAIL
+        fi
+      fi
+    done
+  done
+
+  # Uninstall the CockroachDB operator
+  if oc get subscription cockroachdb -n openshift-operators
+  then
+    local cockroachdb_csv=$(oc get subscription cockroachdb -n openshift-operators -o json | jq -r '.status.installedCSV')
+
+    pad2 "Remove CockroachDB Subscription"
+    if oc delete subscription cockroachdb -n openshift-operators
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+
+    pad2 "Remove CockroachDB ClusterServiceVersions"
+    if oc delete clusterserviceversion ${cockroachdb_csv} -n openshift-operators
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  # Remove dba rolebinding in openshift-operators (if it exists)
+  local dba_binding=$(oc get rolebindings -n openshift-operators -o json | jq -r '.items[] | select(.subjects[].name == "dba") | .metadata.name')
+  if [ "${dba_binding}" != "" ]
+  then
+    pad2 "Remove ${dba_binding} rolebinding from openshift-operators"
+    if oc delete rolebindings ${dba_binding} -n openshift-operators
+    then
+      print_SUCCESS
+    else
+      print_FAIL
+    fi
+  fi
+
+  ocp4_delete_group 'app-team'
+  ocp4_delete_user_htpasswd 'dba' 'tester'
+  ocp4_delete_user 'dba' 'tester'
+  ocp4_delete_project "${this}"
+  ocp4_cleanup_lab_files no_solution
+
+  ocp4_print_cleanup_footer
+}
+
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"

@@ -1,0 +1,130 @@
+#!/bin/bash
+#
+# Copyright 2018 Red Hat, Inc.
+#
+# NAME
+#     lab-scale-manual - lab script for DO280-OCP4
+#
+# SYNOPSIS
+#     lab-scale-manual {start|finish}
+#
+#        start  - prepare the system for starting the lab
+#        finish - perform post-lab finish
+#
+# DESCRIPTION
+#     This script, based on singular argument, either does start or finish for
+#     the [name of the exercise]
+#
+# CHANGELOG
+#   * Wed Dec 11 2019 Michael Phillips <miphilli@redhat.com>
+#   - changes suggested by peer review
+#   * Mon Dec 09 2019 Michael Phillips <miphilli@redhat.com>
+#   - initial creation
+
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/root/bin:/usr/local/bin
+declare -a valid_commands=(start finish)
+
+# Change these variables to match your exercise
+this='scale-manual'
+title='Guided Exercise: Manually Scaling an OpenShift Cluster'
+
+# Do not change these variables
+target='workstation'
+run_as_root='true'
+
+
+function lab_start {
+
+  ocp4_print_prereq_header
+
+  ocp4_is_cluster_up
+  print_line
+  ocp4_fail_if_project_exists "${this}"
+  ocp4_exit_on_failure "It looks like you have already started this exercise. To try this exercise again, run 'lab ${this} finish' followed by 'lab ${this} start'."
+  ocp4_print_setup_header
+
+  print_line
+  print_line " Preparing the student's cluster:"
+  ocp4_install_oc
+  ocp4_add_standard_users
+  ocp4_add_self_provisioing
+
+
+  ocp4_print_setup_footer
+}
+
+
+function lab_finish {
+
+  ocp4_print_cleanup_header
+
+  ocp4_login_as_admin
+  ocp4_delete_project "${this}"
+
+  # Remove the env label added to any worker node
+  local LABEL="env"
+  local JSONPATH="{.metadata.labels.${LABEL}}"
+  for NODE in $(oc get nodes -l node-role.kubernetes.io/worker -o name)
+  do
+    node_label="$(oc get ${NODE} -o jsonpath=${JSONPATH})"
+    if [ -n "${node_label}" ]
+    then
+      pad2 "Removing '${LABEL}' label from '${NODE}'"
+      if oc label ${NODE} ${LABEL}-
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+    fi
+  done
+
+  # Scale worker nodes down to 1 for each machine set where the replica count is greater than 1
+  for MACHINE in $(oc get machinesets -n openshift-machine-api -o name)
+  do
+    # Check if replica count is greater than 1
+    replica_count="$(oc get ${MACHINE} -n openshift-machine-api -o jsonpath='{.spec.replicas}')"
+    if [ ${replica_count} -gt 1 ]
+    then
+      pad2 "Scaling '${MACHINE}' to 1 replica"
+      if oc scale --replicas 1 ${MACHINE} -n openshift-machine-api
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+    fi
+  done
+
+  # Remove env node label from each machine set where it is set
+  for MACHINE in $(oc get machinesets -n openshift-machine-api -o name)
+  do
+    env_label="$(oc get ${MACHINE} -n openshift-machine-api -o jsonpath='{.spec.template.spec.metadata.labels.env}')"
+    if [ -n "${env_label}" ]
+    then
+      # This command removes all node labels (useful for repeating GE).
+      pad2 "Removing all node labels from '${MACHINE}'"
+      if oc patch ${MACHINE} --type='merge' -p '{"spec":{"template":{"spec":{"metadata":{"labels": null}}}}}' -n openshift-machine-api
+      # This command only removes the 'env' node label.
+      # pad2 "Removing 'env' node label from '${MACHINE}'"
+      # if oc patch ${MACHINE} --type='merge' -p '{"spec":{"template":{"spec":{"metadata":{"labels":{"env": null}}}}}}' -n openshift-machine-api
+      then
+        print_SUCCESS
+      else
+        print_FAIL
+      fi
+    fi
+  done
+
+  ocp4_print_cleanup_footer
+}
+
+
+############### Don't EVER change anything below this line ###############
+
+# Source library of functions
+source /usr/local/lib/${function_lib}
+source /usr/local/lib/${platform_lib}
+
+grading_main_program "$@"
