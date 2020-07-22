@@ -1,0 +1,34 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: exoplanets
+  namespace: console-review
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: exoplanets
+  template:
+    metadata:
+      labels:
+        app: exoplanets
+    spec:
+      containers:
+        - name: exoplanets
+          image: 'quay.io/redhattraining/exoplanets:v1.0'
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          env:
+            - name: DB_HOST
+              value: localhost
+            - name: DB_PORT
+              value: '26257'
+            - name: DB_USER
+              value: root
+            - name: DB_NAME
+              value: postgres

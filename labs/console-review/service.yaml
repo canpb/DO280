@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: exoplanets
+  namespace: console-review
+spec:
+  selector:
+    app: exoplanets
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080

@@ -1,0 +1,26 @@
+---
+apiVersion: "autoscaling.openshift.io/v1"
+kind: "ClusterAutoscaler"
+metadata:
+  name: "default"
+spec:
+  podPriorityThreshold: -10
+  resourceLimits:
+    maxNodesTotal: 4
+  scaleDown:
+    enabled: false
+    delayAfterAdd: 3m
+    unneededTime: 3m
+---
+apiVersion: "autoscaling.openshift.io/v1beta1"
+kind: "MachineAutoscaler"
+metadata:
+  name: "scale-automatic"
+  namespace: "openshift-machine-api"
+spec:
+  minReplicas: 1
+  maxReplicas: 1
+  scaleTargetRef:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: MACHINE-SET-NAME

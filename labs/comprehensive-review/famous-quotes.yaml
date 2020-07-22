@@ -1,0 +1,85 @@
+---
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  labels:
+    app: famous-quotes
+  name: famous-quotes
+  namespace: comprehensive-review
+spec:
+  replicas: 1
+  selector:
+    app: famous-quotes
+    deploymentconfig: famous-quotes
+  strategy:
+    activeDeadlineSeconds: 21600
+    resources: {}
+    rollingParams:
+      intervalSeconds: 1
+      maxSurge: 25%
+      maxUnavailable: 25%
+      timeoutSeconds: 600
+      updatePeriodSeconds: 1
+    type: Rolling
+  template:
+    metadata:
+      annotations:
+        openshift.io/generated-by: OpenShiftNewApp
+      creationTimestamp: null
+      labels:
+        app: famous-quotes
+        deploymentconfig: famous-quotes
+    spec:
+      nodeSelector:
+        env: quotes
+      containers:
+      - env:
+        - name: QUOTES_DATABASE
+          value: defaultdb
+        - name: QUOTES_HOSTNAME
+          value: mysql
+        - name: QUOTES_USER
+          value: root
+        - name: QUOTES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: mysql
+        image: quay.io/redhattraining/famous-quotes:1.0
+        imagePullPolicy: IfNotPresent
+        name: famous-quotes
+        ports:
+        - containerPort: 8000
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+  test: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    openshift.io/generated-by: OpenShiftNewApp
+  labels:
+    app: famous-quotes
+  name: famous-quotes
+  namespace: comprehensive-review
+spec:
+  ports:
+  - name: 8000-tcp
+    port: 8000
+    protocol: TCP
+    targetPort: 8000
+  selector:
+    app: famous-quotes
+    deploymentconfig: famous-quotes
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}

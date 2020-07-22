@@ -1,0 +1,11 @@
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+
+[alt_names]
+# Replace with your domain name (i.e. domain.example.com)
+DNS.1 = *.${RHT_OCP4_BASE_DOMAIN}
+
+# Replace with the content of ${RHT_OCP4_WILDCARD_DOMAIN}
+DNS.2 = *.${RHT_OCP4_WILDCARD_DOMAIN}
