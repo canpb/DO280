@@ -3,11 +3,11 @@ kind: OAuth
 metadata:
   name: cluster
 spec:
-  identityProviders:
-  - htpasswd:
-      fileData:
-        name: htp-secret
-    mappingMethod: claim
-    name: myusers
-    type: HTPasswd
+ identityProviders:
+ - htpasswd:
+ fileData:
+ name: localusers
+ mappingMethod: claim
+ name: myusers
+ type: HTPasswd
 
